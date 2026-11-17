@@ -1,0 +1,6 @@
+[project]
+name = "cape-sequence-lab"
+version = "1.0.0"
+description = "Exact fixed-input weighted sequence interpretation"
+requires-python = ">=3.11"
+dependencies = []
