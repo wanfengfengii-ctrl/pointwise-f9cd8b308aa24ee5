@@ -8,7 +8,7 @@ from sequence_lab.delivery.publish import load_published_analysis
 from sequence_lab.cohort.records import SequenceUpdate
 from sequence_lab.cohort.revisions import apply_sequences
 from sequence_lab.cohort.snapshots import freeze_cohort
-from sequence_lab.analysis.execute import analyze_sequence
+from sequence_lab.analysis.execute import analyze_sequence, analyze_anchored
 from sequence_lab.reporting.reports import create_report
 from sequence_lab.reporting.read import read_report
 from sequence_lab.reporting.export import export_report, load_reproduction_bundle
@@ -73,6 +73,62 @@ def main():
             print("branch covariance:", br.result["statistics"]["covariance"])
             print("new source result: impossible; reopened report sequence:",
                   reopened.parents["member"]["sequence"])
+
+            # Joint anchors: requiring both mutually exclusive expansions is
+            # contradictory, while a single anchored expansion halves the mass.
+            joint_aid = analyze_anchored(db, bref, bc, "branch",
+                                         anchors=(("ab", 0, 2), ("ba", 0, 2)),
+                                         rule_ids=("ab", "ba"))
+            joint = read_report(db, create_report(db, joint_aid))
+            assert joint.result == dict(status="impossible", evidence=F(0),
+                                        rule_ids=("ab", "ba"), statistics=None)
+            single_aid = analyze_anchored(db, bref, bc, "branch",
+                                          anchors=(("ab", 0, 2),),
+                                          rule_ids=("ab", "ba"))
+            single = load_published_analysis(db, single_aid)["result"]
+            assert single["evidence"] == F(1, 2)
+            assert single["statistics"]["means"] == (F(1), F(0))
+            joint_bundle = export_report(db, joint.report_id, output)
+            with open_database() as replay:
+                parents = joint_bundle["report"]["parents"]
+                replay_ref = save_grammar(
+                    replay, GrammarRevision.from_record(parents["grammar"]))
+                apply_sequences(replay, [SequenceUpdate(**m) for m in parents["cohort"]])
+                replay_cohort = freeze_cohort(
+                    replay, [m["source_id"] for m in parents["cohort"]])
+                replay_aid = analyze_anchored(
+                    replay, replay_ref, replay_cohort, parents["member"]["source_id"],
+                    anchors=joint_bundle["report"]["request"]["anchors"],
+                    rule_ids=joint_bundle["report"]["request"]["rule_ids"])
+                replay_result = load_published_analysis(replay, replay_aid)["result"]
+            assert replay_result == joint.result
+            assert joint_bundle["report"]["parents"]["fixed"]["request"]["anchors"] == (
+                ("ab", 0, 2), ("ba", 0, 2))
+            print("joint anchors:", joint.result)
+            print("single anchor:", single)
+            print("offline replay matches:", replay_result == joint.result)
+            anchored_payload = dict(
+                case_id="anchored-v1",
+                input={"sequence": "aa",
+                       "anchors": [list(a) for a in
+                                   joint_bundle["report"]["request"]["anchors"]],
+                       "rule_ids": list(joint_bundle["report"]["request"]["rule_ids"])},
+                expected={"status": "impossible", "evidence": "0", "statistics": None,
+                          "single_evidence": "1/2", "single_means": ["1", "0"]},
+                actual={"status": joint.result["status"],
+                        "evidence": str(joint.result["evidence"]),
+                        "statistics": joint.result["statistics"],
+                        "single_evidence": str(single["evidence"]),
+                        "single_means": [str(x) for x in single["statistics"]["means"]]},
+                downstream_expected={"offscreen_replay": "impossible"},
+                downstream_actual={"offscreen_replay": replay_result["status"]},
+                code_paths=["sequence_lab/analysis/anchored.py",
+                            "sequence_lab/analysis/request.py",
+                            "sequence_lab/delivery/publish.py",
+                            "sequence_lab/reporting/export.py"],
+                oracle="joint yield-span mask chart over finite trees; exact Fraction")
+            print("POINTWISE_ANCHORED " + json.dumps(anchored_payload, ensure_ascii=False,
+                                                     sort_keys=True))
 
 
 if __name__ == "__main__":

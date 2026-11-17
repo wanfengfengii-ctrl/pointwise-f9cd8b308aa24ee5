@@ -37,7 +37,7 @@ verify 调度完整原套件。demo 在测试临时目录使用真实 SQLite 数
 |cohort.records|SequenceUpdate(source_id,revision,sequence=None,withdrawn=False)|
 |cohort.revisions|apply_sequences(db,updates) -> ApplyResult；load_current_sources(db,source_ids=None)|
 |cohort.snapshots|freeze_cohort(db,source_ids) -> 整数 cohort_id；load_cohort_snapshot；load_snapshot_member|
-|analysis.execute|analyze_sequence(db,grammar_ref,cohort_id,member_id,rule_ids=(),fault=None) -> 整数 analysis_id|
+|analysis.execute|analyze_sequence(db,grammar_ref,cohort_id,member_id,rule_ids=(),fault=None) -> 整数 analysis_id；analyze_anchored(db,grammar_ref,cohort_id,member_id,anchors=(),rule_ids=(),*,fault=None)|
 |delivery.publish|load_published_analysis(db,analysis_id) -> 独立字典，包含 request、result|
 |reporting.reports|create_report(db,analysis_id) -> 整数 report_id|
 |reporting.read|read_report(db,report_id) -> FixedReport，canonical_record() 返回完整记录|
@@ -89,4 +89,4 @@ codec 的结构化 JSON 带 version=1，每个值有显式类型标签；Fractio
 
 grammar 的四模块负责不可变口径与接纳；cohort 四模块负责来源批次和冻结；compiler 四模块负责执行边、一元闭合和原始贡献；analysis 四模块负责绑定、证据、联合矩和执行；delivery 四模块负责精确编码、版本库及发布；reporting 四模块负责固定报告、父链核验与原子导出。所有生产路径均在真实分析交付链中使用。
 
-tests/test_analysis.py 覆盖确定发射、几何循环、同形身份、互斥分支、零证据及请求、顺序、Unicode、权重扫描、二元交叉矩、带循环递归和互相转换。tests/test_inputs.py 覆盖非法语法原子拒绝、精确支持边界、批次冲突、版本顺序、撤回恢复和快照隔离。tests/test_delivery.py 覆盖发布故障点、初始化、精确编码、磁盘重开、离库复算、对象独立、父链损坏、原子导出和真实替换错误。所有测试使用真实标准库计算及 SQLite，不依赖网络。
+tests/test_analysis.py 覆盖确定发射、几何循环、同形身份、互斥分支、零证据及请求、顺序、Unicode、权重扫描、二元交叉矩、带循环递归和互相转换。tests/test_anchored.py 用独立有限解析枚举对照无循环小语法，并行循环手算核账，覆盖空锚点、重排、零权重、Unicode 与双锚点矛盾。tests/test_anchored_delivery.py 覆盖非法锚点整次拒绝、故障点回滚重试、更正后重开、离库复算与复算包锚点篡改。tests/test_examples.py 核对 anchored_examples.py 六组手算。tests/test_inputs.py 覆盖非法语法原子拒绝、精确支持边界、批次冲突、版本顺序、撤回恢复和快照隔离。tests/test_delivery.py 覆盖发布故障点、初始化、精确编码、磁盘重开、离库复算、对象独立、父链损坏、原子导出和真实替换错误。所有测试使用真实标准库计算及 SQLite，不依赖网络。锚点实现口径与核对方法见 HANDOFF.md。

@@ -1,5 +1,6 @@
 from sequence_lab.delivery.codec import encode_value, decode_value, content_digest
-from sequence_lab.analysis.request import AnalysisRequest, bind_analysis_request
+from sequence_lab.analysis.request import (
+    AnalysisRequest, AnalysisRequestError, bind_analysis_request, canonical_anchors)
 from sequence_lab.analysis.moments import AnalysisResult
 
 
@@ -33,6 +34,23 @@ def publish_analysis(db, bound, result, fault=None):
         return analysis_id
 
 
+def _validate_fixed_request(fixed):
+    if type(fixed) is not dict or set(fixed) != {
+            "request", "grammar_digest", "cohort_digest", "member_digest"}:
+        raise AnalysisPublicationError("invalid fixed request structure")
+    fields = fixed["request"]
+    if type(fields) is not dict or set(fields) not in (
+            {"grammar_ref", "cohort_id", "member_id", "rule_ids"},
+            {"grammar_ref", "cohort_id", "member_id", "rule_ids", "anchors"}):
+        raise AnalysisPublicationError("invalid request fields")
+    if "anchors" not in fields:
+        return None
+    try:
+        return canonical_anchors(fields["anchors"])
+    except AnalysisRequestError as exc:
+        raise AnalysisPublicationError(str(exc)) from exc
+
+
 def load_published_analysis(db, analysis_id):
     row = db.connection.execute(
         """SELECT a.id,a.request_ref,a.payload AS result,a.digest AS result_digest,
@@ -45,13 +63,13 @@ def load_published_analysis(db, analysis_id):
     fixed, value = decode_value(row["request"]), decode_value(row["result"])
     if content_digest(fixed) != row["request_digest"]:
         raise AnalysisPublicationError("request fingerprint mismatch")
-    if type(fixed) is not dict or set(fixed) != {
-            "request", "grammar_digest", "cohort_digest", "member_digest"}:
-        raise AnalysisPublicationError("invalid fixed request structure")
+    anchors = _validate_fixed_request(fixed)
     request = AnalysisRequest(**fixed["request"])
     if (request.grammar_ref, request.cohort_id, request.member_id) != (
             row["grammar_ref"], row["cohort_ref"], row["member_id"]):
         raise AnalysisPublicationError("request parent identity mismatch")
+    if request.anchors != anchors:
+        raise AnalysisPublicationError("request anchor normalization mismatch")
     result = AnalysisResult.from_record(value)
     if result.rule_ids != request.rule_ids:
         raise AnalysisPublicationError("published rule order mismatch")

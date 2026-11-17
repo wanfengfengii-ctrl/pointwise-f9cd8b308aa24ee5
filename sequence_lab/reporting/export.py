@@ -9,6 +9,7 @@ from sequence_lab.grammar.catalog import build_catalog
 from sequence_lab.cohort.records import SequenceUpdate
 from sequence_lab.cohort.validation import validate_sequence_batch
 from sequence_lab.analysis.moments import AnalysisResult
+from sequence_lab.analysis.request import canonical_anchors
 
 
 class ReportExportError(ValueError):
@@ -77,10 +78,31 @@ def load_reproduction_bundle(path):
         if ids != tuple(sorted(set(ids))) or member not in cohort:
             raise ReportExportError("invalid cohort membership")
         request = report["request"]
-        if type(request) is not dict or set(request) != {
-                "grammar_ref", "cohort_id", "member_id", "rule_ids"}:
+        if type(request) is not dict or set(request) not in (
+                {"grammar_ref", "cohort_id", "member_id", "rule_ids"},
+                {"grammar_ref", "cohort_id", "member_id", "rule_ids", "anchors"}):
             raise ReportExportError("invalid request")
-        build_catalog(grammar).select_ids(request["rule_ids"])
+        catalog = build_catalog(grammar)
+        catalog.select_ids(request["rule_ids"])
+        fixed_parent = parents["fixed"]
+        if type(fixed_parent) is not dict or set(fixed_parent) != {
+                "request", "grammar_digest", "cohort_digest", "member_digest"}:
+            raise ReportExportError("invalid fixed parent record")
+        recorded_request = fixed_parent["request"]
+        if type(recorded_request) is not dict:
+            raise ReportExportError("invalid fixed request record")
+        surface_has = "anchors" in request
+        if surface_has != ("anchors" in recorded_request):
+            raise ReportExportError("anchor placement disagreement")
+        if surface_has:
+            anchors = canonical_anchors(request["anchors"])
+            if canonical_anchors(recorded_request["anchors"]) != anchors:
+                raise ReportExportError("anchor copies disagree")
+            for rule_id, i, j in anchors:
+                if rule_id not in catalog.by_id:
+                    raise ReportExportError("unknown anchor rule identity")
+                if not 0 <= i < j <= len(member["sequence"]):
+                    raise ReportExportError("anchor span outside frozen member")
         if (request["grammar_ref"] != parents["grammar_ref"]
                 or request["cohort_id"] != parents["cohort_id"]
                 or request["member_id"] != member["source_id"]):
